@@ -11,9 +11,11 @@ interface ChatInterfaceProps {
   messages: Message[]
   onAction: (action: string, data?: any) => void
   flowState: FlowState
+  userType: "business" | "developer" | null
+  completedActions: string[]
 }
 
-export function ChatInterface({ messages, onAction, flowState }: ChatInterfaceProps) {
+export function ChatInterface({ messages, onAction, flowState, userType, completedActions }: ChatInterfaceProps) {
   const [inputValue, setInputValue] = useState("")
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -57,7 +59,8 @@ export function ChatInterface({ messages, onAction, flowState }: ChatInterfacePr
       </div>
 
       {/* Messages */}
-      <ScrollArea className="flex-1 px-4 py-4" ref={scrollAreaRef}>
+      <div className="flex-1 overflow-hidden">
+        <ScrollArea className="h-full px-4 py-4" ref={scrollAreaRef}>
         <div className="space-y-4">
           {messages.map((message) => (
             <div key={message.id} className="flex gap-3">
@@ -93,21 +96,30 @@ export function ChatInterface({ messages, onAction, flowState }: ChatInterfacePr
                 </div>
                 {message.buttons && message.buttons.length > 0 && (
                   <div className="flex flex-wrap gap-2 mt-2">
-                    {message.buttons.map((button, index) => (
-                      <Button
-                        key={index}
-                        onClick={() => onAction(button.action)}
-                        variant={button.variant || "default"}
-                        size="sm"
-                        className={`${
-                          button.variant === "outline"
-                            ? "bg-white border-gray-300 text-gray-700 hover:bg-gray-50"
-                            : "bg-blue-600 hover:bg-blue-700 text-white"
-                        }`}
-                      >
-                        {button.label}
-                      </Button>
-                    ))}
+                    {message.buttons.map((button, index) => {
+                      const isUserTypeButton = button.action === "select-business" || button.action === "select-developer"
+                      const isActionCompleted = completedActions.includes(button.action)
+                      const isDisabled = isUserTypeButton && userType !== null || isActionCompleted
+
+                      return (
+                        <Button
+                          key={index}
+                          onClick={() => !isDisabled && onAction(button.action)}
+                          variant={button.variant || "default"}
+                          size="sm"
+                          disabled={isDisabled}
+                          className={`${
+                            button.variant === "outline"
+                              ? "bg-white border-gray-300 text-gray-700 hover:bg-gray-50"
+                              : isDisabled
+                                ? "bg-gray-400 text-gray-200 cursor-not-allowed"
+                                : "bg-blue-600 hover:bg-blue-700 text-white"
+                          }`}
+                        >
+                          {button.label}
+                        </Button>
+                      )
+                    })}
                   </div>
                 )}
                 <div className="text-xs text-gray-400 mt-1">
@@ -118,7 +130,8 @@ export function ChatInterface({ messages, onAction, flowState }: ChatInterfacePr
           ))}
           <div ref={messagesEndRef} />
         </div>
-      </ScrollArea>
+        </ScrollArea>
+      </div>
 
       {/* Input */}
       <div className="border-t border-gray-200 px-4 py-4">

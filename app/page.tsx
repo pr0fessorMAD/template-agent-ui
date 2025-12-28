@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { ChatInterface } from "@/components/chat-interface"
 import { OutputViewer } from "@/components/output-viewer"
 import { TemplateInputModal } from "@/components/template-input-modal"
@@ -54,6 +54,8 @@ export default function Home() {
   }>>([])
   const [outputView, setOutputView] = useState<"samples" | "mappings" | "coded-template">("samples")
   const [showTemplateModal, setShowTemplateModal] = useState(false)
+  const [completedActions, setCompletedActions] = useState<string[]>([])
+  const messageCounterRef = useRef(0)
 
   // Initialize messages on client side to avoid hydration mismatch
   useEffect(() => {
@@ -70,6 +72,16 @@ export default function Home() {
       }
     ])
   }, [])
+
+  const addMessage = (message: Omit<Message, "id" | "timestamp">) => {
+    messageCounterRef.current += 1
+    const newMessage: Message = {
+      ...message,
+      id: `${Date.now()}-${messageCounterRef.current}`,
+      timestamp: new Date()
+    }
+    setMessages(prev => [...prev, newMessage])
+  }
 
   const handleTemplateSubmit = (userTemplate: string, userSchema: string) => {
     addMessage({
@@ -112,6 +124,7 @@ export default function Home() {
   }
 
   const handleUserAction = (action: string, data?: any) => {
+    setCompletedActions(prev => [...prev, action])
     switch (action) {
       case "select-business":
         setUserType("business")
@@ -368,6 +381,8 @@ export default function Home() {
             messages={messages}
             onAction={handleUserAction}
             flowState={flowState}
+            userType={userType}
+            completedActions={completedActions}
           />
         </Panel>
         <PanelResizeHandle className="w-2 bg-gray-200 hover:bg-blue-300 active:bg-blue-400 transition-colors cursor-col-resize relative">
