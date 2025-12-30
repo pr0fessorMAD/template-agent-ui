@@ -21,7 +21,6 @@ export function ChatInterface({ messages, onAction, flowState, userType, complet
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLDivElement>(null)
-  const [streamingMessage, setStreamingMessage] = useState<string>("")
   const [isStreaming, setIsStreaming] = useState(false)
 
   const scrollToBottom = () => {
@@ -40,7 +39,6 @@ export function ChatInterface({ messages, onAction, flowState, userType, complet
 
   const sendMessageToAPI = async (message: string) => {
     setIsStreaming(true)
-    setStreamingMessage("")
 
     try {
       const response = await fetch('/api/stream-query', {
@@ -55,24 +53,19 @@ export function ChatInterface({ messages, onAction, flowState, userType, complet
 
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
-
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
 
         const chunk = decoder.decode(value)
         const lines = chunk.split('\n')
-
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
+          if (line.trim()) {
             try {
-              const data = JSON.parse(line.slice(6))
-              if (data.type === 'chunk') {
-                setStreamingMessage(prev => prev + data.content)
-              } else if (data.type === 'done') {
-                onAction("api-response", { message: streamingMessage })
+              const data = JSON.parse(line)
+              if (data.finish_reason === 'STOP') {
+                onAction("api-response", { message: data.content.parts[0].text })
                 setIsStreaming(false)
-                setStreamingMessage("")
                 return
               }
             } catch (e) {
@@ -84,7 +77,6 @@ export function ChatInterface({ messages, onAction, flowState, userType, complet
     } catch (error) {
       console.error('Streaming error:', error)
       setIsStreaming(false)
-      setStreamingMessage("")
     }
   }
 
@@ -207,7 +199,7 @@ export function ChatInterface({ messages, onAction, flowState, userType, complet
                 <div className="px-4 py-3 rounded-lg bg-gray-100 border border-gray-200">
                   <div className="flex items-center gap-2">
                     <div className="animate-spin w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full"></div>
-                    <span className="text-sm text-gray-600">{streamingMessage || "Thinking..."}</span>
+                    <span className="text-sm text-gray-600">{"Thinking..."}</span>
                   </div>
                 </div>
               </div>
