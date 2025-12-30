@@ -13,12 +13,16 @@ interface ChatInterfaceProps {
   flowState: FlowState
   userType: "business" | "developer" | null
   completedActions: string[]
+  sessionId: string
 }
 
-export function ChatInterface({ messages, onAction, flowState, userType, completedActions }: ChatInterfaceProps) {
+export function ChatInterface({ messages, onAction, flowState, userType, completedActions, sessionId }: ChatInterfaceProps) {
   const [inputValue, setInputValue] = useState("")
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLDivElement>(null)
+  const [streamingMessage, setStreamingMessage] = useState<string>("")
+  const [isStreaming, setIsStreaming] = useState(false)
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -28,11 +32,72 @@ export function ChatInterface({ messages, onAction, flowState, userType, complet
     scrollToBottom()
   }, [messages])
 
+  useEffect(() => {
+    if (inputRef.current && !inputValue) {
+      inputRef.current.innerHTML = '<div class="text-gray-400">Type your message...</div>'
+    }
+  }, [inputValue])
+
+  const sendMessageToAPI = async (message: string) => {
+    setIsStreaming(true)
+    setStreamingMessage("")
+
+    try {
+      const response = await fetch('/api/stream-query', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ sessionId, message }),
+      })
+
+      if (!response.body) return
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        const chunk = decoder.decode(value)
+        const lines = chunk.split('\n')
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6))
+              if (data.type === 'chunk') {
+                setStreamingMessage(prev => prev + data.content)
+              } else if (data.type === 'done') {
+                onAction("api-response", { message: streamingMessage })
+                setIsStreaming(false)
+                setStreamingMessage("")
+                return
+              }
+            } catch (e) {
+              // ignore
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Streaming error:', error)
+      setIsStreaming(false)
+      setStreamingMessage("")
+    }
+  }
+
   const handleSendMessage = () => {
-    if (inputValue.trim()) {
-      // For now, treat text input as custom action
-      onAction("custom-input", { message: inputValue.trim() })
+    if (inputValue && inputValue.trim() !== "" && inputValue !== "<br>" && inputValue !== "<div><br></div>") {
+      // Add user message
+      onAction("custom-input", { message: inputValue })
+      // Send to API
+      sendMessageToAPI(inputValue)
       setInputValue("")
+      if (inputRef.current) {
+        inputRef.current.innerHTML = ""
+      }
     }
   }
 
@@ -88,8 +153,13 @@ export function ChatInterface({ messages, onAction, flowState, userType, complet
                       <div className="animate-spin w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full"></div>
                       <span className="text-sm text-gray-600">{message.content}</span>
                     </div>
+                  ) : message.type === "user" ? (
+                    <div
+                      className="text-sm text-gray-800"
+                      dangerouslySetInnerHTML={{ __html: message.content }}
+                    />
                   ) : (
-                    <p className={`text-sm ${message.type === "bot" ? "text-gray-700" : "text-gray-800"}`}>
+                    <p className="text-sm text-gray-700">
                       {message.content}
                     </p>
                   )}
@@ -128,6 +198,21 @@ export function ChatInterface({ messages, onAction, flowState, userType, complet
               </div>
             </div>
           ))}
+          {isStreaming && (
+            <div className="flex gap-3">
+              <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-blue-600">
+                <Bot className="w-4 h-4 text-white" />
+              </div>
+              <div className="flex-1">
+                <div className="px-4 py-3 rounded-lg bg-gray-100 border border-gray-200">
+                  <div className="flex items-center gap-2">
+                    <div className="animate-spin w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+                    <span className="text-sm text-gray-600">{streamingMessage || "Thinking..."}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
           <div ref={messagesEndRef} />
         </div>
         </ScrollArea>
@@ -136,24 +221,35 @@ export function ChatInterface({ messages, onAction, flowState, userType, complet
       {/* Input */}
       <div className="border-t border-gray-200 px-4 py-4">
         <div className="flex gap-2">
-          <Input
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder="Type your message..."
-            className="flex-1"
+          <div
+            ref={inputRef}
+            contentEditable
+            className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-h-[40px] max-h-[120px] overflow-y-auto"
+            onInput={(e) => setInputValue(e.currentTarget.innerHTML)}
+            onKeyDown={handleKeyPress}
+            onFocus={() => {
+              if (inputRef.current && inputRef.current.innerHTML === '<div class="text-gray-400">Type your message...</div>') {
+                inputRef.current.innerHTML = ''
+              }
+            }}
+            onBlur={() => {
+              if (inputRef.current && !inputRef.current.innerHTML.trim()) {
+                inputRef.current.innerHTML = '<div class="text-gray-400">Type your message...</div>'
+              }
+            }}
+            dangerouslySetInnerHTML={{ __html: inputValue || '<div class="text-gray-400">Type your message...</div>' }}
             disabled={flowState === "processing-template" || flowState === "generating-samples" || flowState === "generating-coded-template" || flowState === "retrying-mapping"}
           />
           <Button
             onClick={handleSendMessage}
-            disabled={!inputValue.trim() || flowState === "processing-template" || flowState === "generating-samples" || flowState === "generating-coded-template" || flowState === "retrying-mapping"}
+            disabled={!inputValue || inputValue.trim() === "" || inputValue === "<br>" || inputValue === "<div><br></div>" || inputValue === '<div class="text-gray-400">Type your message...</div>' || flowState === "processing-template" || flowState === "generating-samples" || flowState === "generating-coded-template" || flowState === "retrying-mapping"}
             className="bg-blue-600 hover:bg-blue-700 text-white"
           >
             <Send className="w-4 h-4" />
           </Button>
         </div>
         <div className="text-xs text-gray-500 mt-2">
-          Press Enter to send • Use buttons above for quick actions
+          Press Enter to send • Use buttons above for quick actions • Paste formatted text to preserve formatting
         </div>
       </div>
     </div>

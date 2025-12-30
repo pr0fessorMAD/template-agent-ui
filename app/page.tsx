@@ -1,4 +1,4 @@
-"use client"
+"use client";
 
 import { useState, useEffect, useRef } from "react"
 import { ChatInterface } from "@/components/chat-interface"
@@ -6,34 +6,29 @@ import { OutputViewer } from "@/components/output-viewer"
 import { TemplateInputModal } from "@/components/template-input-modal"
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels"
 
-export type Message = {
-  id: string
-  type: "bot" | "user"
-  content: string
-  timestamp: Date
-  buttons?: Array<{
-    label: string
-    action: string
-    variant?: "default" | "outline" | "secondary"
-  }>
-  data?: any
+export default function Page() {
+  const [sessionId, setSessionId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const initSession = async () => {
+      const res = await fetch("/api/create-session", {
+        method: "POST",
+      });
+      const data = await res.json();
+      setSessionId(data.sessionId);
+    };
+
+    initSession();
+  }, []);
+
+  if (!sessionId) return <div>Initializing session…</div>;
+
+  return (
+    <ChatUI sessionId={sessionId} />
+  );
 }
 
-export type FlowState =
-  | "welcome"
-  | "awaiting-template"
-  | "processing-template"
-  | "labels-detected"
-  | "generating-samples"
-  | "samples-ready"
-  | "generating-coded-template"
-  | "coded-template-ready"
-  | "awaiting-mapping-decision"
-  | "retrying-mapping"
-  | "mapping-updated"
-  | "awaiting-final-samples"
-
-export default function Home() {
+function ChatUI({ sessionId }: { sessionId: string }) {
   const [messages, setMessages] = useState<Message[]>([])
   const [userType, setUserType] = useState<"business" | "developer" | null>(null)
   const [flowState, setFlowState] = useState<FlowState>("welcome")
@@ -351,24 +346,14 @@ export default function Home() {
           type: "user",
           content: data.message
         })
-        // For now, just acknowledge the custom input
+        // Response will come from API
+        break
+
+      case "api-response":
         addMessage({
           type: "bot",
-          content: "I've received your custom mappings. Let me process them...",
-          data: { processing: true }
+          content: data.message
         })
-        // Simulate processing custom mappings
-        setTimeout(() => {
-          setMessages(prev => prev.filter(m => !m.data?.processing))
-          addMessage({
-            type: "bot",
-            content: "Custom mappings applied successfully! You can now proceed with the template.",
-            buttons: [
-              { label: "Proceed", action: "proceed-with-template" }
-            ]
-          })
-          setFlowState("mapping-updated")
-        }, 1500)
         break
     }
   }
@@ -383,6 +368,7 @@ export default function Home() {
             flowState={flowState}
             userType={userType}
             completedActions={completedActions}
+            sessionId={sessionId}
           />
         </Panel>
         <PanelResizeHandle className="w-2 bg-gray-200 hover:bg-blue-300 active:bg-blue-400 transition-colors cursor-col-resize relative">
